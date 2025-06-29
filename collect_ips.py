@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import re
 import os
+import ipaddress  # 导入ipaddress模块
 
 # 目标URL列表
 urls = [
@@ -40,12 +41,20 @@ for url in urls:
         # 匹配IPv4
         ipv4_matches = re.findall(ipv4_pattern, element_text)
         for ip in ipv4_matches:
-            ip_set.add(ip)
+            try:
+                ip_obj = ipaddress.ip_address(ip)  # 判断是否是合法IP
+                ip_set.add(str(ip_obj))
+            except ValueError:
+                continue  # 非法IP跳过
 
         # 匹配IPv6
         ipv6_matches = re.findall(ipv6_pattern, element_text)
         for ip in ipv6_matches:
-            ip_set.add(ip)
+            try:
+                ip_obj = ipaddress.ip_address(ip)
+                ip_set.add(str(ip_obj))
+            except ValueError:
+                continue
 
 # 写入文件
 if ip_set:
