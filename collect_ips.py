@@ -12,13 +12,13 @@ import tempfile
 import shutil
 import time
 
-# 目标URL列表（静态页面）
+# 静态抓取目标URL列表
 urls = [
     'https://api.uouin.com/cloudflare.html',
     'https://ip.164746.xyz',
 ]
 
-# IP正则
+# IP正则表达式
 ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
 ipv6_pattern = r'\b(?:[A-Fa-f0-9]{1,4}:){1,7}[A-Fa-f0-9]{1,4}\b'
 
@@ -26,7 +26,7 @@ def is_public_ip(ip):
     try:
         ip_obj = ipaddress.ip_address(ip)
         return not (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_reserved or ip_obj.is_link_local)
-    except:
+    except ValueError:
         return False
 
 def fetch_ips_requests():
@@ -39,14 +39,12 @@ def fetch_ips_requests():
             print(f"[requests] 请求失败: {url} 错误: {e}")
             continue
 
-        soup = BeautifulSoup(response.text, 'html.parser')
-        elements = soup.find_all(['tr', 'li', 'p', 'div'])
-        for element in elements:
-            text = element.get_text()
-            ips = re.findall(ipv4_pattern, text) + re.findall(ipv6_pattern, text)
-            for ip in ips:
-                if is_public_ip(ip):
-                    ip_set.add(ip)
+        # 直接对整个页面源码全文匹配IP，避免漏掉 <font> 或其它标签里的IP
+        text = response.text
+        ips = re.findall(ipv4_pattern, text) + re.findall(ipv6_pattern, text)
+        for ip in ips:
+            if is_public_ip(ip):
+                ip_set.add(ip)
         print(f"[requests] {url} 抓取到 {len(ip_set)} 个 IP")
     return ip_set
 
@@ -54,7 +52,8 @@ def create_chrome_driver():
     user_data_dir = tempfile.mkdtemp()
     options = Options()
     options.add_argument(f'--user-data-dir={user_data_dir}')
-    options.add_argument('--headless')
+    options.add_argument('--headless=new')  # 最新headless模式，更稳定
+    options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     driver = webdriver.Chrome(options=options)
@@ -69,10 +68,10 @@ def fetch_ips_selenium_nslookup():
 
         wait = WebDriverWait(driver, 15)
 
-        # 等待标签区加载出来（可根据页面结构调整）
+        # 等待顶部标签加载
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "ul.nav.nav-tabs")))
 
-        # 找到“Cloudflare”标签按钮，点击
+        # 点击 “Cloudflare” 标签
         tabs = driver.find_elements(By.CSS_SELECTOR, "ul.nav.nav-tabs li a")
         clicked = False
         for tab in tabs:
@@ -82,42 +81,47 @@ def fetch_ips_selenium_nslookup():
                 break
 
         if not clicked:
-            print("未找到 Cloudflare 标签，可能页面结构变化")
+            print("[selenium] 未找到 Cloudflare 标签，可能页面结构变化")
             return ip_set
 
-        # 点击后等待该面板加载 IP 表格（调整选择器等待具体元素）
+        # 等待Cloudflare数据表加载
         wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div#cloudflare .table-responsive")))
 
-        time.sleep(3)  # 等待额外数据加载，防止异步未完成
+        # 额外等待确保异步加载完成
+        time.sleep(3)
 
         page_source = driver.page_source
         ips = re.findall(ipv4_pattern, page_source) + re.findall(ipv6_pattern, page_source)
         for ip in ips:
             if is_public_ip(ip):
                 ip_set.add(ip)
+
         print(f"[selenium] {url} 抓取到 {len(ip_set)} 个 IP")
+
     except Exception as e:
         print(f"[selenium] Selenium 抓取出错: {e}")
     finally:
         driver.quit()
         shutil.rmtree(user_data_dir)
+
     return ip_set
 
 def load_existing_ips(filename='ip.txt'):
     if not os.path.exists(filename):
         return set()
     with open(filename, 'r') as f:
-        return set(line.strip("[]\n ") for line in f if line.strip())
+        # 去除 IPv6 方括号，去空白行
+        return set(line.strip("[] \n") for line in f if line.strip())
 
 def save_ips(ips, filename='ip.txt'):
-    ipv4s = sorted([ip for ip in ips if ':' not in ip])
-    ipv6s = sorted([ip for ip in ips if ':' in ip])
+    ipv4s = sorted(ip for ip in ips if ':' not in ip)
+    ipv6s = sorted(ip for ip in ips if ':' in ip)
     with open(filename, 'w') as f:
         for ip in ipv4s + ipv6s:
             if ':' in ip:
-                f.write(f'[{ip}]\n')
+                f.write(f'[{ip}]\n')  # IPv6加方括号
             else:
-                f.write(ip + '\n')
+                f.write(ip + '\n')  
 
 def main():
     existing_ips = load_existing_ips()
