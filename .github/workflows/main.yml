@@ -18,36 +18,10 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y \
-            fonts-liberation \
-            libnss3 \
-            libatk-bridge2.0-0 \
-            libgtk-3-0 \
-            libxss1 \
-            libasound2t64 \
-            wget \
-            unzip
-
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install requests beautifulsoup4 selenium
-
-      - name: Download ChromeDriver matching Chrome version
-        run: |
-          CHROME_VERSION_FULL=$(google-chrome --version | grep -oP '\d+\.\d+(\.\d+)*')
-          CHROME_MAJOR_MINOR=$(echo $CHROME_VERSION_FULL | cut -d. -f1,2)
-          echo "Chrome major.minor version: $CHROME_MAJOR_MINOR"
-          CHROMEDRIVER_VERSION=$(curl -sS "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_MAJOR_MINOR}")
-          echo "ChromeDriver version: $CHROMEDRIVER_VERSION"
-          wget -N https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip
-          unzip -o chromedriver_linux64.zip
-          sudo mv -f chromedriver /usr/local/bin/chromedriver
-          sudo chmod +x /usr/local/bin/chromedriver
-          chromedriver --version
+          pip install requests beautifulsoup4
 
       - name: Run script
         run: python ${{ github.workspace }}/collect_ips.py
