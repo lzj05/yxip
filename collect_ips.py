@@ -17,6 +17,13 @@ def is_public_ip(ip):
     except ValueError:
         return False
 
+# ======= 格式化 IP =======
+def format_ip(ip):
+    ip_obj = ipaddress.ip_address(ip)
+    if ip_obj.version == 6:
+        return f'[{ip}]'  # IPv6 加上括号
+    return ip
+
 # ======= requests 抓取 =======
 def fetch_ips_requests():
     urls = [
@@ -30,7 +37,6 @@ def fetch_ips_requests():
         try:
             response = requests.get(url, timeout=10)
             count = 0
-            # 这两个网址不限制IP数量
             unlimited = ('dot.lzj.x10.bz' in url) or ('api.uouin.com' in url)
 
             if unlimited:
@@ -40,7 +46,7 @@ def fetch_ips_requests():
                     for ans in answers:
                         ip = ans.get("data", "").strip()
                         if ip and is_public_ip(ip):
-                            ip_set.add(ip)
+                            ip_set.add(format_ip(ip))
                     print(f"[requests] {url} 抓取到 {len(answers)} 个 IP（不限制数量）")
                 except Exception:
                     soup = BeautifulSoup(response.text, 'html.parser')
@@ -51,7 +57,7 @@ def fetch_ips_requests():
                         ipv6_matches = re.findall(ipv6_pattern, text)
                         for ip in ipv4_matches + ipv6_matches:
                             if is_public_ip(ip):
-                                ip_set.add(ip)
+                                ip_set.add(format_ip(ip))
                     print(f"[requests] {url} 抓取到 {len(ip_set)} 个 IP（不限制数量）")
 
             elif 'cf.090227.xyz' in url:
@@ -63,7 +69,7 @@ def fetch_ips_requests():
                         ip = cols[1].get_text(strip=True)
                         if re.match(ipv4_pattern, ip) and is_public_ip(ip):
                             if ip not in ip_set:
-                                ip_set.add(ip)
+                                ip_set.add(format_ip(ip))
                                 count += 1
                                 if count >= 30:
                                     break
@@ -79,7 +85,7 @@ def fetch_ips_requests():
                     for ip in ipv4_matches + ipv6_matches:
                         if is_public_ip(ip):
                             if ip not in ip_set:
-                                ip_set.add(ip)
+                                ip_set.add(format_ip(ip))
                                 count += 1
                                 if count >= 30:
                                     break
@@ -103,7 +109,6 @@ def update_ip_file(new_ips):
 
     all_ips = existing_ips.union(new_ips)
 
-    # 去掉可能的方括号
     cleaned_ips = set(ip.strip('[]') for ip in all_ips)
 
     def ip_sort_key(ip):
@@ -114,7 +119,11 @@ def update_ip_file(new_ips):
 
     with open(filename, 'w') as f:
         for ip in sorted_ips:
-            f.write(ip + '\n')
+            ip_obj = ipaddress.ip_address(ip)
+            if ip_obj.version == 6:
+                f.write(f'[{ip}]\n')  # IPv6 输出带括号
+            else:
+                f.write(f'{ip}\n')
 
     print(f"总共写入 {len(sorted_ips)} 个 IP 到文件 {filename}")
 
