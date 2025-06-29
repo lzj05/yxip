@@ -30,22 +30,34 @@ def fetch_ips_requests():
         try:
             response = requests.get(url, timeout=10)
             count = 0
+            # 这两个网址不限制IP数量
+            unlimited = ('dot.lzj.x10.bz' in url) or ('api.uouin.com' in url)
 
-            if 'dot.lzj.x10.bz' in url:
-                # 处理JSON格式，提取Answer里的data字段
-                data = response.json()
-                answers = data.get("Answer", [])
-                for ans in answers:
-                    ip = ans.get("data", "").strip()
-                    if ip and is_public_ip(ip):
-                        if ip not in ip_set:
+            if unlimited:
+                # 如果返回JSON，尝试解析JSON中的Answer字段
+                try:
+                    data = response.json()
+                    answers = data.get("Answer", [])
+                    for ans in answers:
+                        ip = ans.get("data", "").strip()
+                        if ip and is_public_ip(ip):
                             ip_set.add(ip)
-                            count += 1
-                            if count >= 30:
-                                break
+                    print(f"[requests] {url} 抓取到 {len(answers)} 个 IP（不限制数量）")
+                except Exception:
+                    # 如果不是JSON，直接用BeautifulSoup全抓取IP，不限制数量
+                    soup = BeautifulSoup(response.text, 'html.parser')
+                    elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
+                    for element in elements:
+                        text = element.get_text()
+                        ipv4_matches = re.findall(ipv4_pattern, text)
+                        ipv6_matches = re.findall(ipv6_pattern, text)
+                        for ip in ipv4_matches + ipv6_matches:
+                            if is_public_ip(ip):
+                                ip_set.add(ip)
+                    print(f"[requests] {url} 抓取到 {len(ip_set)} 个 IP（不限制数量）")
 
             elif 'cf.090227.xyz' in url:
-                # 特殊处理该网址，按表格第二列td取IP
+                # 特殊处理该网址，按表格第二列td取IP，限制30个
                 soup = BeautifulSoup(response.text, 'html.parser')
                 rows = soup.find_all('tr')
                 for row in rows:
@@ -58,8 +70,10 @@ def fetch_ips_requests():
                                 count += 1
                                 if count >= 30:
                                     break
+                print(f"[requests] {url} 抓取到 {count} 个 IP（最多30个）")
+
             else:
-                # 其他网址用常规方式查找IP
+                # 其他网址用常规方式查找IP，限制30个
                 soup = BeautifulSoup(response.text, 'html.parser')
                 elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
                 for element in elements:
@@ -75,8 +89,8 @@ def fetch_ips_requests():
                                     break
                     if count >= 30:
                         break
+                print(f"[requests] {url} 抓取到 {count} 个 IP（最多30个）")
 
-            print(f"[requests] {url} 抓取到 {count} 个 IP")
         except Exception as e:
             print(f"[requests] 抓取失败: {url} 错误: {e}")
 
