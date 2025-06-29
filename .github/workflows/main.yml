@@ -2,9 +2,9 @@ name: Update IP List
 
 on:
   schedule:
-    - cron: '0 */6 * * *'  # 每6小时运行一次
-  workflow_dispatch:
-  push:
+    - cron: '0 */6 * * *' # 每6小时运行一次
+  workflow_dispatch: # 允许手动触发
+  push: # 提交触发
 
 jobs:
   update-ip-list:
@@ -20,16 +20,34 @@ jobs:
 
     - name: Install dependencies
       run: |
+        sudo apt update
+        sudo apt install -y wget unzip xvfb libxi6 libgconf-2-4
         python -m pip install --upgrade pip
-        python -m pip install requests beautifulsoup4 selenium
+        pip install requests beautifulsoup4 selenium
 
-    - name: Check Chrome and ChromeDriver version
+    - name: Install Chrome
       run: |
+        wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+        sudo apt install -y ./google-chrome-stable_current_amd64.deb
         google-chrome --version
+
+    - name: Install matching ChromeDriver
+      run: |
+        CHROME_VERSION_FULL=$(google-chrome --version | grep -oP '\d+\.\d+\.\d+')
+        CHROME_MAJOR_VERSION=$(echo $CHROME_VERSION_FULL | cut -d. -f1)
+        CHROMEDRIVER_VERSION=$(curl -sS "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROME_MAJOR_VERSION")
+        echo "ChromeDriver version: $CHROMEDRIVER_VERSION"
+        wget -N https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip
+        unzip chromedriver_linux64.zip
+        sudo mv -f chromedriver /usr/local/bin/chromedriver
+        sudo chmod +x /usr/local/bin/chromedriver
         chromedriver --version
 
-    - name: Run script
-      run: python ${{ github.workspace }}/collect_ips.py
+    - name: Run Selenium with Xvfb
+      run: |
+        Xvfb :99 -screen 0 1920x1080x24 &
+        export DISPLAY=:99
+        python ${{ github.workspace }}/collect_ips.py
 
     - name: Commit and push changes
       run: |
@@ -41,4 +59,3 @@ jobs:
           git push
         else
           echo "No changes detected, skipping commit."
-        fi
