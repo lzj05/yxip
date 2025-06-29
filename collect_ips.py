@@ -12,11 +12,24 @@ urls = [
 ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
 ipv6_pattern = r'\b(?:[A-Fa-f0-9]{1,4}:){1,7}[A-Fa-f0-9]{1,4}\b'
 
+old_ips = []
+old_ips_set = set()
+
+# 先读取旧文件，保存顺序
 if os.path.exists('ip.txt'):
-    os.remove('ip.txt')
+    with open('ip.txt', 'r') as f:
+        for line in f:
+            ip = line.strip()
+            if not ip:
+                continue
+            if ip.startswith('[') and ip.endswith(']'):
+                ip = ip[1:-1]
+            old_ips.append(ip)
+            old_ips_set.add(ip)
 
-ip_set = set()
+new_ips_set = set()
 
+# 抓取新IP
 for url in urls:
     try:
         response = requests.get(url, timeout=10)
@@ -29,31 +42,34 @@ for url in urls:
     elements = soup.find_all(['tr', 'li', 'p', 'div'])
 
     for element in elements:
-        element_text = element.get_text()
+        text = element.get_text()
 
-        ipv4_matches = re.findall(ipv4_pattern, element_text)
-        for ip in ipv4_matches:
+        for ip in re.findall(ipv4_pattern, text):
             try:
                 ip_obj = ipaddress.ip_address(ip)
-                ip_set.add(str(ip_obj))
+                new_ips_set.add(str(ip_obj))
             except ValueError:
                 continue
 
-        ipv6_matches = re.findall(ipv6_pattern, element_text)
-        for ip in ipv6_matches:
+        for ip in re.findall(ipv6_pattern, text):
             try:
                 ip_obj = ipaddress.ip_address(ip)
-                ip_set.add(str(ip_obj))
+                new_ips_set.add(str(ip_obj))
             except ValueError:
                 continue
 
-if ip_set:
-    with open('ip.txt', 'w') as file:
-        for ip in sorted(ip_set):
-            if ':' in ip:  # IPv6 地址包含冒号
-                file.write(f'[{ip}]\n')
-            else:
-                file.write(f'{ip}\n')
-    print(f'成功抓取 {len(ip_set)} 个唯一 IP 地址（IPv4 + IPv6），已保存到 ip.txt 文件中。')
-else:
-    print('没有找到任何 IP 地址。')
+# 取旧文件列表和新抓取集合的交集，保持旧文件顺序
+final_ips = [ip for ip in old_ips if ip in new_ips_set]
+
+# 排序 IPv4 和 IPv6，IPv4排前，IPv6排后
+ipv4_list = sorted([ip for ip in final_ips if ':' not in ip])
+ipv6_list = sorted([ip for ip in final_ips if ':' in ip])
+
+# 写回文件，IPv6加方括号
+with open('ip.txt', 'w') as f:
+    for ip in ipv4_list:
+        f.write(f"{ip}\n")
+    for ip in ipv6_list:
+        f.write(f"[{ip}]\n")
+
+print(f"共保存 {len(final_ips)} 个与新抓取IP匹配的旧IP，写回 ip.txt 文件。")
