@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import re
 import os
 import ipaddress
+import json
 
 # ======= IP 正则 =======
 ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
@@ -28,12 +29,24 @@ def fetch_ips_requests():
     for url in urls:
         try:
             response = requests.get(url, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-
             count = 0
 
-            if 'cf.090227.xyz' in url:
+            if 'dot.lzj.x10.bz' in url:
+                # 处理JSON格式，提取Answer里的data字段
+                data = response.json()
+                answers = data.get("Answer", [])
+                for ans in answers:
+                    ip = ans.get("data", "").strip()
+                    if ip and is_public_ip(ip):
+                        if ip not in ip_set:
+                            ip_set.add(ip)
+                            count += 1
+                            if count >= 30:
+                                break
+
+            elif 'cf.090227.xyz' in url:
                 # 特殊处理该网址，按表格第二列td取IP
+                soup = BeautifulSoup(response.text, 'html.parser')
                 rows = soup.find_all('tr')
                 for row in rows:
                     cols = row.find_all('td')
@@ -47,6 +60,7 @@ def fetch_ips_requests():
                                     break
             else:
                 # 其他网址用常规方式查找IP
+                soup = BeautifulSoup(response.text, 'html.parser')
                 elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
                 for element in elements:
                     text = element.get_text()
