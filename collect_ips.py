@@ -7,9 +7,10 @@ import ipaddress
 urls = [
     'https://api.uouin.com/cloudflare.html',
     'https://ip.164746.xyz'
+    'https://www.nslookup.io/domains/bpb.yousef.isegaro.com/dns-records/#cloudflare'
 ]
 
-ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
+ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'  
 ipv6_pattern = r'\b(?:[A-Fa-f0-9]{1,4}:){1,7}[A-Fa-f0-9]{1,4}\b'
 
 old_ips = []
