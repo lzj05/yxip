@@ -53,13 +53,19 @@ def update_ip_file(new_ips):
         existing_ips = set()
 
     all_ips = existing_ips.union(new_ips)
-    sorted_ips = sorted(all_ips, key=lambda ip: ipaddress.ip_address(ip))
+
+    # 处理所有 IP 字符串，去除可能的前后空白和方括号
+    cleaned_ips = set(ip.strip().strip("[]") for ip in all_ips)
+
+    # 排序 IP，支持 IPv4 和 IPv6
+    sorted_ips = sorted(cleaned_ips, key=lambda ip: ipaddress.ip_address(ip))
 
     with open(filename, 'w') as f:
         for ip in sorted_ips:
             f.write(ip + '\n')
-    print(f"总共写入 {len(sorted_ips)} 个 IP 到 {filename}")
 
-if __name__ == "__main__":
+    print(f"更新后的 IP 列表写入到 {filename}，共 {len(sorted_ips)} 条记录。")
+
+if __name__ == '__main__':
     new_ips = fetch_ips_requests()
     update_ip_file(new_ips)
