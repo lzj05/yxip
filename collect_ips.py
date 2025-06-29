@@ -121,7 +121,7 @@ def save_ips(ips, filename='ip.txt'):
             if ':' in ip:
                 f.write(f'[{ip}]\n')  # IPv6加方括号
             else:
-                f.write(ip + '\n')  
+                f.write(ip + '\n')
 
 def main():
     existing_ips = load_existing_ips()
