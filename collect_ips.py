@@ -16,7 +16,7 @@ def is_public_ip(ip):
     except ValueError:
         return False
 
-# ======= requests 抓取 =======
+# ======= requests 抓取，限制每个网址最多抓取30个有效IP =======
 def fetch_ips_requests():
     urls = [
         'https://api.uouin.com/cloudflare.html',
@@ -24,6 +24,8 @@ def fetch_ips_requests():
         'https://cf.090227.xyz/'
     ]
     ip_set = set()
+    max_per_url = 30  # 每个网址最大有效IP数量限制
+
     for url in urls:
         try:
             response = requests.get(url, timeout=10)
@@ -36,8 +38,13 @@ def fetch_ips_requests():
                 ipv6_matches = re.findall(ipv6_pattern, text)
                 for ip in ipv4_matches + ipv6_matches:
                     if is_public_ip(ip):
-                        ip_set.add(ip)
-                        count += 1
+                        if ip not in ip_set and count < max_per_url:
+                            ip_set.add(ip)
+                            count += 1
+                    if count >= max_per_url:
+                        break
+                if count >= max_per_url:
+                    break
             print(f"[requests] {url} 抓取到 {count} 个 IP")
         except Exception as e:
             print(f"[requests] 抓取失败: {url} 错误: {e}")
