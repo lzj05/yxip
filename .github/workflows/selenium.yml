@@ -1,0 +1,47 @@
+name: Selenium ChromeDriver Setup and Test
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test-selenium:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y wget unzip python3 python3-pip
+          pip3 install selenium
+
+      - name: Install Google Chrome
+        run: |
+          wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
+          google-chrome --version
+
+      - name: Setup ChromeDriver
+        run: |
+          CHROME_VERSION_FULL=$(google-chrome --version | grep -oP '\d+\.\d+(\.\d+)*')
+          echo "Chrome full version: $CHROME_VERSION_FULL"
+          CHROME_MAJOR_MINOR=$(echo $CHROME_VERSION_FULL | cut -d. -f1,2)
+          echo "Chrome major.minor version: $CHROME_MAJOR_MINOR"
+          CHROMEDRIVER_VERSION=$(curl -sS "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_MAJOR_MINOR}")
+          if [[ "$CHROMEDRIVER_VERSION" == *"<"* ]]; then
+            echo "No matching ChromeDriver version found, fallback to latest"
+            CHROMEDRIVER_VERSION=$(curl -sS "https://chromedriver.storage.googleapis.com/LATEST_RELEASE")
+          fi
+          echo "ChromeDriver version to download: $CHROMEDRIVER_VERSION"
+          wget -N "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip"
+          unzip -o chromedriver_linux64.zip
+          sudo mv -f chromedriver /usr/local/bin/chromedriver
+          sudo chmod +x /usr/local/bin/chromedriver
+          chromedriver --version
+
+      - name: Run Selenium test script
+        run: |
+          python3 ./selenium_test.py
