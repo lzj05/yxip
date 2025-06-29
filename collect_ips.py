@@ -6,17 +6,17 @@ import ipaddress
 
 urls = [
     'https://api.uouin.com/cloudflare.html',
-    'https://ip.164746.xyz'
+    'https://ip.164746.xyz',
     'https://www.nslookup.io/domains/bpb.yousef.isegaro.com/dns-records/#cloudflare'
 ]
 
-ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'  
+ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
 ipv6_pattern = r'\b(?:[A-Fa-f0-9]{1,4}:){1,7}[A-Fa-f0-9]{1,4}\b'
 
 old_ips = []
 old_ips_set = set()
 
-# 先读取旧文件，保存顺序
+# 读取旧文件（保持顺序）
 if os.path.exists('ip.txt'):
     with open('ip.txt', 'r') as f:
         for line in f:
@@ -29,14 +29,16 @@ if os.path.exists('ip.txt'):
             old_ips_set.add(ip)
 
 new_ips_set = set()
+site_ip_counts = {}
 
-# 抓取新IP
 for url in urls:
+    site_ips = set()
     try:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
     except requests.RequestException as e:
         print(f"请求失败: {url} 错误信息: {e}")
+        site_ip_counts[url] = 0
         continue
 
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -48,18 +50,23 @@ for url in urls:
         for ip in re.findall(ipv4_pattern, text):
             try:
                 ip_obj = ipaddress.ip_address(ip)
-                new_ips_set.add(str(ip_obj))
+                ip_str = str(ip_obj)
+                site_ips.add(ip_str)
             except ValueError:
                 continue
 
         for ip in re.findall(ipv6_pattern, text):
             try:
                 ip_obj = ipaddress.ip_address(ip)
-                new_ips_set.add(str(ip_obj))
+                ip_str = str(ip_obj)
+                site_ips.add(ip_str)
             except ValueError:
                 continue
 
-# 取旧文件列表和新抓取集合的交集，保持旧文件顺序
+    site_ip_counts[url] = len(site_ips)
+    new_ips_set.update(site_ips)
+
+# 取旧文件和新抓取交集（保持旧文件顺序）
 final_ips = [ip for ip in old_ips if ip in new_ips_set]
 
 # 排序 IPv4 和 IPv6，IPv4排前，IPv6排后
@@ -73,4 +80,10 @@ with open('ip.txt', 'w') as f:
     for ip in ipv6_list:
         f.write(f"[{ip}]\n")
 
-print(f"共保存 {len(final_ips)} 个与新抓取IP匹配的旧IP，写回 ip.txt 文件。")
+# 输出统计
+print("每个网站抓取到的唯一 IP 数量：")
+for site, count in site_ip_counts.items():
+    print(f"  {site} ：{count} 个 IP")
+
+print(f"\n抓取到的新 IP 总数: {len(new_ips_set)}")
+print(f"最终写入文件的 IP 数量（交集）: {len(final_ips)}")
