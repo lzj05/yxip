@@ -1,0 +1,50 @@
+name: Setup ChromeDriver
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  setup-chromedriver:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y wget unzip
+
+    - name: Get Chrome version and download matching ChromeDriver
+      shell: bash
+      run: |
+        # 获取完整Chrome版本号，比如 "Google Chrome 114.0.5735.198"
+        CHROME_VERSION_FULL=$(google-chrome --version | grep -oP '\d+\.\d+(\.\d+)*')
+        echo "Chrome full version: $CHROME_VERSION_FULL"
+
+        # 取主版本号和次版本号，比如 114.0
+        CHROME_MAJOR_MINOR=$(echo $CHROME_VERSION_FULL | cut -d. -f1,2)
+        echo "Chrome major.minor version: $CHROME_MAJOR_MINOR"
+
+        # 请求对应版本的ChromeDriver版本号
+        CHROMEDRIVER_VERSION=$(curl -sS "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_MAJOR_MINOR}")
+
+        # 如果返回结果包含 < ，说明没有对应版本，改用最新稳定版
+        if [[ "$CHROMEDRIVER_VERSION" == *"<"* ]]; then
+          echo "未找到对应版本的ChromeDriver，使用最新稳定版本"
+          CHROMEDRIVER_VERSION=$(curl -sS "https://chromedriver.storage.googleapis.com/LATEST_RELEASE")
+        fi
+
+        echo "ChromeDriver version: $CHROMEDRIVER_VERSION"
+
+        # 下载并解压
+        wget -N "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip"
+        unzip -o chromedriver_linux64.zip
+
+        # 移动到系统路径并赋权
+        sudo mv -f chromedriver /usr/local/bin/chromedriver
+        sudo chmod +x /usr/local/bin/chromedriver
+
+        # 显示版本确认
+        chromedriver --version
