@@ -21,7 +21,8 @@ def fetch_ips_requests():
     urls = [
         'https://api.uouin.com/cloudflare.html',
         'https://ip.164746.xyz',
-        'https://cf.090227.xyz/'
+        'https://cf.090227.xyz/',
+        'https://dot.lzj.x10.bz/?doh=https%3A%2F%2Fdot.lzj.x10.bz%2Fdns-query&domain=bpb.yousef.isegaro.com&type=all'
     ]
     ip_set = set()
     for url in urls:
@@ -32,7 +33,7 @@ def fetch_ips_requests():
             count = 0
 
             if 'cf.090227.xyz' in url:
-                # 该网站特殊处理：按表格行读取第二个<td>作为IP
+                # 特殊处理该网址，按表格第二列td取IP
                 rows = soup.find_all('tr')
                 for row in rows:
                     cols = row.find_all('td')
@@ -42,9 +43,10 @@ def fetch_ips_requests():
                             if ip not in ip_set:
                                 ip_set.add(ip)
                                 count += 1
-                                if count >= 30:  # 限制30个
+                                if count >= 30:
                                     break
             else:
+                # 其他网址用常规方式查找IP
                 elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
                 for element in elements:
                     text = element.get_text()
@@ -77,13 +79,12 @@ def update_ip_file(new_ips):
 
     all_ips = existing_ips.union(new_ips)
 
-    # 清理所有 IP 中可能的方括号
+    # 去掉可能的方括号
     cleaned_ips = set(ip.strip('[]') for ip in all_ips)
 
-    # 排序，先 IPv4 后 IPv6，确保不会报错
+    # 排序，IPv4优先，避免不同版本IP比较报错
     def ip_sort_key(ip):
         ip_obj = ipaddress.ip_address(ip)
-        # IPv4 优先
         return (ip_obj.version, ip_obj)
 
     sorted_ips = sorted(cleaned_ips, key=ip_sort_key)
