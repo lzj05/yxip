@@ -3,7 +3,7 @@ import re
 import os
 import ipaddress
 
-# 静态抓取目标URL列表
+# 静态网页列表
 urls = [
     'https://api.uouin.com/cloudflare.html',
     'https://ip.164746.xyz',
@@ -11,9 +11,11 @@ urls = [
 ]
 
 # API 请求地址
-api_url = 'https://www.nslookup.io/api/v1/domains/bpb.yousef.isegaro.com/dns-records'
+api_urls = [
+    'https://www.nslookup.io/api/v1/domains/bpb.yousef.isegaro.com/dns-records'
+]
 
-# IP 正则表达式
+# IP 正则
 ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
 ipv6_pattern = r'\b(?:[A-Fa-f0-9]{1,4}:){1,7}[A-Fa-f0-9]{1,4}\b'
 
@@ -46,27 +48,29 @@ def fetch_ips_requests():
 
 def fetch_ips_from_api():
     ip_set = set()
-    try:
-        response = requests.get(api_url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+    for api_url in api_urls:
+        try:
+            response = requests.get(api_url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
 
-        count = 0
-        for record in data.get('records', []):
-            ip = record.get('value')
-            if ip and is_public_ip(ip):
-                ip_set.add(ip)
-                count += 1
-        print(f"[api] {api_url} 抓取到 {count} 个 IP")
-    except Exception as e:
-        print(f"[api] API 抓取出错: {e}")
+            count = 0
+            for record in data.get('records', []):
+                ip = record.get('value')
+                if ip and is_public_ip(ip):
+                    ip_set.add(ip)
+                    count += 1
+
+            print(f"[api] {api_url} 抓取到 {count} 个 IP")
+        except Exception as e:
+            print(f"[api] API 抓取出错: {e}")
     return ip_set
 
 def load_existing_ips(filename='ip.txt'):
     if not os.path.exists(filename):
         return set()
     with open(filename, 'r') as f:
-        return set(line.strip("[] \n") for line in f if line.strip())
+        return set(line.strip('[] \n') for line in f if line.strip())
 
 def save_ips(ips, filename='ip.txt'):
     ipv4s = sorted(ip for ip in ips if ':' not in ip)
@@ -91,9 +95,9 @@ def main():
     if new_ips:
         combined_ips = existing_ips.union(new_ips)
         save_ips(combined_ips)
-        print(f"新增 {len(new_ips)} 个公网 IP，当前总计 {len(combined_ips)} 个公网 IP，已保存到 ip.txt")
+        print(f"✅ 新增 {len(new_ips)} 个公网 IP，当前总计 {len(combined_ips)} 个公网 IP，已保存到 ip.txt")
     else:
-        print("无新增公网 IP，文件保持不变。")
+        print("⚙️ 无新增公网 IP，文件保持不变。")
 
 if __name__ == "__main__":
     main()
