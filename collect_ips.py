@@ -16,7 +16,7 @@ def is_public_ip(ip):
     except ValueError:
         return False
 
-# ======= requests 抓取，限制每个网址最多抓取30个有效IP =======
+# ======= requests 抓取 =======
 def fetch_ips_requests():
     urls = [
         'https://api.uouin.com/cloudflare.html',
@@ -24,30 +24,46 @@ def fetch_ips_requests():
         'https://cf.090227.xyz/'
     ]
     ip_set = set()
-    max_per_url = 30  # 每个网址最大有效IP数量限制
-
     for url in urls:
         try:
             response = requests.get(url, timeout=10)
             soup = BeautifulSoup(response.text, 'html.parser')
-            elements = soup.find_all(['tr', 'li', 'p', 'div', 'font'])
+
             count = 0
-            for element in elements:
-                text = element.get_text()
-                ipv4_matches = re.findall(ipv4_pattern, text)
-                ipv6_matches = re.findall(ipv6_pattern, text)
-                for ip in ipv4_matches + ipv6_matches:
-                    if is_public_ip(ip):
-                        if ip not in ip_set and count < max_per_url:
-                            ip_set.add(ip)
-                            count += 1
-                    if count >= max_per_url:
+
+            if 'cf.090227.xyz' in url:
+                # 该网站特殊处理：按表格行读取第二个<td>作为IP
+                rows = soup.find_all('tr')
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) >= 2:
+                        ip = cols[1].get_text(strip=True)
+                        if re.match(ipv4_pattern, ip) and is_public_ip(ip):
+                            if ip not in ip_set:
+                                ip_set.add(ip)
+                                count += 1
+                                if count >= 30:  # 限制30个
+                                    break
+            else:
+                elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
+                for element in elements:
+                    text = element.get_text()
+                    ipv4_matches = re.findall(ipv4_pattern, text)
+                    ipv6_matches = re.findall(ipv6_pattern, text)
+                    for ip in ipv4_matches + ipv6_matches:
+                        if is_public_ip(ip):
+                            if ip not in ip_set:
+                                ip_set.add(ip)
+                                count += 1
+                                if count >= 30:
+                                    break
+                    if count >= 30:
                         break
-                if count >= max_per_url:
-                    break
+
             print(f"[requests] {url} 抓取到 {count} 个 IP")
         except Exception as e:
             print(f"[requests] 抓取失败: {url} 错误: {e}")
+
     return ip_set
 
 # ======= 合并、去重、排序、写入 =======
@@ -61,32 +77,22 @@ def update_ip_file(new_ips):
 
     all_ips = existing_ips.union(new_ips)
 
-    # 清理 IP（去除空白和方括号）
-    cleaned_ips = set(ip.strip().strip("[]") for ip in all_ips)
+    # 清理所有 IP 中可能的方括号
+    cleaned_ips = set(ip.strip('[]') for ip in all_ips)
 
-    ipv4_list = []
-    ipv6_list = []
+    # 排序，先 IPv4 后 IPv6，确保不会报错
+    def ip_sort_key(ip):
+        ip_obj = ipaddress.ip_address(ip)
+        # IPv4 优先
+        return (ip_obj.version, ip_obj)
 
-    for ip in cleaned_ips:
-        try:
-            ip_obj = ipaddress.ip_address(ip)
-            if ip_obj.version == 4:
-                ipv4_list.append(ip)
-            else:
-                ipv6_list.append(ip)
-        except ValueError:
-            pass  # 跳过无效IP
-
-    ipv4_sorted = sorted(ipv4_list, key=lambda ip: ipaddress.IPv4Address(ip))
-    ipv6_sorted = sorted(ipv6_list, key=lambda ip: ipaddress.IPv6Address(ip))
-
-    sorted_ips = ipv4_sorted + ipv6_sorted
+    sorted_ips = sorted(cleaned_ips, key=ip_sort_key)
 
     with open(filename, 'w') as f:
         for ip in sorted_ips:
             f.write(ip + '\n')
 
-    print(f"更新后的 IP 列表写入到 {filename}，共 {len(sorted_ips)} 条记录。")
+    print(f"总共写入 {len(sorted_ips)} 个 IP 到文件 {filename}")
 
 if __name__ == '__main__':
     new_ips = fetch_ips_requests()
