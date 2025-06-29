@@ -21,7 +21,7 @@ def is_public_ip(ip):
 def format_ip(ip):
     ip_obj = ipaddress.ip_address(ip)
     if ip_obj.version == 6:
-        return f'[{ip}]'  # IPv6 加上括号
+        return f'[{ip}]'  # IPv6 加括号
     return ip
 
 # ======= requests 抓取 =======
@@ -119,25 +119,30 @@ def update_ip_file(new_ips):
     else:
         existing_ips = set()
 
-    all_ips = existing_ips.union(new_ips)
+    # 原 IP 去括号
+    existing_ips_clean = set(ip.strip('[]') for ip in existing_ips)
+    new_ips_clean = set(ip.strip('[]') for ip in new_ips)
 
-    cleaned_ips = set(ip.strip('[]') for ip in all_ips)
+    removed_ips = existing_ips_clean - new_ips_clean
+    added_ips = new_ips_clean - existing_ips_clean
 
     def ip_sort_key(ip):
         ip_obj = ipaddress.ip_address(ip)
         return (ip_obj.version, ip_obj)
 
-    sorted_ips = sorted(cleaned_ips, key=ip_sort_key)
+    sorted_ips = sorted(new_ips_clean, key=ip_sort_key)
 
     with open(filename, 'w') as f:
         for ip in sorted_ips:
             ip_obj = ipaddress.ip_address(ip)
             if ip_obj.version == 6:
-                f.write(f'[{ip}]\n')  # IPv6 输出带括号
+                f.write(f'[{ip}]\n')
             else:
                 f.write(f'{ip}\n')
 
-    print(f"总共写入 {len(sorted_ips)} 个 IP 到文件 {filename}")
+    print(f"共更新了 {len(sorted_ips)} 个 IP")
+    print(f"新增 IP: {len(added_ips)} 个")
+    print(f"删除 IP: {len(removed_ips)} 个")
 
 if __name__ == '__main__':
     new_ips = fetch_ips_requests()
