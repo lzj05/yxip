@@ -54,11 +54,26 @@ def update_ip_file(new_ips):
 
     all_ips = existing_ips.union(new_ips)
 
-    # 处理所有 IP 字符串，去除可能的前后空白和方括号
+    # 清理 IP（去除空白和方括号）
     cleaned_ips = set(ip.strip().strip("[]") for ip in all_ips)
 
-    # 排序 IP，支持 IPv4 和 IPv6
-    sorted_ips = sorted(cleaned_ips, key=lambda ip: ipaddress.ip_address(ip))
+    ipv4_list = []
+    ipv6_list = []
+
+    for ip in cleaned_ips:
+        try:
+            ip_obj = ipaddress.ip_address(ip)
+            if ip_obj.version == 4:
+                ipv4_list.append(ip)
+            else:
+                ipv6_list.append(ip)
+        except ValueError:
+            pass  # 跳过无效IP
+
+    ipv4_sorted = sorted(ipv4_list, key=lambda ip: ipaddress.IPv4Address(ip))
+    ipv6_sorted = sorted(ipv6_list, key=lambda ip: ipaddress.IPv6Address(ip))
+
+    sorted_ips = ipv4_sorted + ipv6_sorted
 
     with open(filename, 'w') as f:
         for ip in sorted_ips:
