@@ -16,6 +16,7 @@ import time
 urls = [
     'https://api.uouin.com/cloudflare.html',
     'https://ip.164746.xyz',
+    'https://cf.090227.xyz/',  # 新加的网站
 ]
 
 # IP正则表达式
@@ -39,13 +40,15 @@ def fetch_ips_requests():
             print(f"[requests] 请求失败: {url} 错误: {e}")
             continue
 
-        # 直接对整个页面源码全文匹配IP，避免漏掉 <font> 或其它标签里的IP
+        # 直接全文匹配，防止遗漏 <font>、<div> 等标签里的IP
         text = response.text
         ips = re.findall(ipv4_pattern, text) + re.findall(ipv6_pattern, text)
+        count = 0
         for ip in ips:
             if is_public_ip(ip):
                 ip_set.add(ip)
-        print(f"[requests] {url} 抓取到 {len(ip_set)} 个 IP")
+                count += 1
+        print(f"[requests] {url} 抓取到 {count} 个 IP")
     return ip_set
 
 def create_chrome_driver():
@@ -92,11 +95,13 @@ def fetch_ips_selenium_nslookup():
 
         page_source = driver.page_source
         ips = re.findall(ipv4_pattern, page_source) + re.findall(ipv6_pattern, page_source)
+        count = 0
         for ip in ips:
             if is_public_ip(ip):
                 ip_set.add(ip)
+                count += 1
 
-        print(f"[selenium] {url} 抓取到 {len(ip_set)} 个 IP")
+        print(f"[selenium] {url} 抓取到 {count} 个 IP")
 
     except Exception as e:
         print(f"[selenium] Selenium 抓取出错: {e}")
@@ -110,7 +115,6 @@ def load_existing_ips(filename='ip.txt'):
     if not os.path.exists(filename):
         return set()
     with open(filename, 'r') as f:
-        # 去除 IPv6 方括号，去空白行
         return set(line.strip("[] \n") for line in f if line.strip())
 
 def save_ips(ips, filename='ip.txt'):
@@ -119,7 +123,7 @@ def save_ips(ips, filename='ip.txt'):
     with open(filename, 'w') as f:
         for ip in ipv4s + ipv6s:
             if ':' in ip:
-                f.write(f'[{ip}]\n')  # IPv6加方括号
+                f.write(f'[{ip}]\n')
             else:
                 f.write(ip + '\n')
 
