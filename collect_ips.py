@@ -1,5 +1,5 @@
 import requests
-from bs4 import BeautifulSoup  
+from bs4 import BeautifulSoup
 import re
 import os
 import ipaddress
@@ -34,7 +34,6 @@ def fetch_ips_requests():
             unlimited = ('dot.lzj.x10.bz' in url) or ('api.uouin.com' in url)
 
             if unlimited:
-                # 如果返回JSON，尝试解析JSON中的Answer字段
                 try:
                     data = response.json()
                     answers = data.get("Answer", [])
@@ -44,7 +43,6 @@ def fetch_ips_requests():
                             ip_set.add(ip)
                     print(f"[requests] {url} 抓取到 {len(answers)} 个 IP（不限制数量）")
                 except Exception:
-                    # 如果不是JSON，直接用BeautifulSoup全抓取IP，不限制数量
                     soup = BeautifulSoup(response.text, 'html.parser')
                     elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
                     for element in elements:
@@ -57,7 +55,6 @@ def fetch_ips_requests():
                     print(f"[requests] {url} 抓取到 {len(ip_set)} 个 IP（不限制数量）")
 
             elif 'cf.090227.xyz' in url:
-                # 特殊处理该网址，按表格第二列td取IP，限制30个
                 soup = BeautifulSoup(response.text, 'html.parser')
                 rows = soup.find_all('tr')
                 for row in rows:
@@ -73,7 +70,6 @@ def fetch_ips_requests():
                 print(f"[requests] {url} 抓取到 {count} 个 IP（最多30个）")
 
             else:
-                # 其他网址用常规方式查找IP，限制30个
                 soup = BeautifulSoup(response.text, 'html.parser')
                 elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
                 for element in elements:
@@ -110,7 +106,6 @@ def update_ip_file(new_ips):
     # 去掉可能的方括号
     cleaned_ips = set(ip.strip('[]') for ip in all_ips)
 
-    # 排序，IPv4优先，避免不同版本IP比较报错
     def ip_sort_key(ip):
         ip_obj = ipaddress.ip_address(ip)
         return (ip_obj.version, ip_obj)
