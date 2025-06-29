@@ -30,7 +30,10 @@ def fetch_ips_requests():
         'https://api.uouin.com/cloudflare.html',
         'https://ip.164746.xyz',
         'https://cf.090227.xyz/',
-        'https://dot.lzj.x10.bz/?doh=https%3A%2F%2Fdot.lzj.x10.bz%2Fdns-query&domain=bpb.yousef.isegaro.com&type=all'
+        'https://dot.lzj.x10.bz/?doh=https%3A%2F%2Fdot.lzj.x10.bz%2Fdns-query&domain=bpb.yousef.isegaro.com&type=all',
+        'https://addressesapi.090227.xyz/ip.164746.xyz',
+        'https://addressesapi.090227.xyz/CloudFlareYes',
+        'https://ipdb.api.030101.xyz/?type=bestcf&country=true'
     ]
     ip_set = set()
     for url in urls:
@@ -74,6 +77,15 @@ def fetch_ips_requests():
                                 if count >= 30:
                                     break
                 print(f"[requests] {url} 抓取到 {count} 个 IP（最多30个）")
+
+            elif 'addressesapi.090227.xyz' in url or 'ipdb.api.030101.xyz' in url:
+                text = response.text
+                ipv4_matches = re.findall(ipv4_pattern, text)
+                ipv6_matches = re.findall(ipv6_pattern, text)
+                for ip in ipv4_matches + ipv6_matches:
+                    if is_public_ip(ip):
+                        ip_set.add(format_ip(ip))
+                print(f"[requests] {url} 抓取到 {len(ipv4_matches) + len(ipv6_matches)} 个 IP（不限制数量）")
 
             else:
                 soup = BeautifulSoup(response.text, 'html.parser')
