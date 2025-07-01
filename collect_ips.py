@@ -54,7 +54,8 @@ def fetch_ips_requests():
                     for ans in answers:
                         ip = ans.get("data", "").strip()
                         if ip and is_public_ip(ip):
-                            ip_set.add(format_ip(ip))
+                            entry = f"{format_ip(ip)}#未知{format_ip(ip)}"
+                            ip_set.add(entry)
                     print(f"[requests] {url} 抓取到 {len(answers)} 个 IP（不限制数量）")
                 except Exception:
                     soup = BeautifulSoup(response.text, 'html.parser')
@@ -65,7 +66,8 @@ def fetch_ips_requests():
                         ipv6_matches = re.findall(ipv6_pattern, text)
                         for ip in ipv4_matches + ipv6_matches:
                             if is_public_ip(ip):
-                                ip_set.add(format_ip(ip))
+                                entry = f"{format_ip(ip)}#未知{format_ip(ip)}"
+                                ip_set.add(entry)
                     print(f"[requests] {url} 抓取到 {len(ip_set)} 个 IP（不限制数量）")
 
             # 处理 cf.090227.xyz 网站
@@ -75,11 +77,12 @@ def fetch_ips_requests():
                 for row in rows:
                     cols = row.find_all('td')
                     if len(cols) >= 2:
-                        ip = cols[1].get_text(strip=True)
                         carrier = cols[0].get_text(strip=True)
+                        ip = cols[1].get_text(strip=True)
                         if re.match(ipv4_pattern, ip) and is_public_ip(ip):
-                            if f"{format_ip(ip)}#{carrier}" not in ip_set:
-                                ip_set.add(f"{format_ip(ip)}#{carrier}")
+                            entry = f"{format_ip(ip)}#{carrier}{format_ip(ip)}"
+                            if entry not in ip_set:
+                                ip_set.add(entry)
                                 count += 1
                                 if count >= 30:
                                     break
@@ -87,15 +90,21 @@ def fetch_ips_requests():
 
             # 处理 addressesapi 和 ipdb 网站
             elif 'addressesapi.090227.xyz' in url or 'ipdb.api.030101.xyz' in url:
+                carrier = '未知'
+                if 'ct' in url:
+                    carrier = '电信'
+                elif 'cmcc-ipv6' in url or 'cmcc' in url:
+                    carrier = '移动'
                 text = response.text
                 ipv4_matches = re.findall(ipv4_pattern, text)
                 ipv6_matches = re.findall(ipv6_pattern, text)
                 for ip in ipv4_matches + ipv6_matches:
                     if is_public_ip(ip):
-                        ip_set.add(format_ip(ip))
+                        entry = f"{format_ip(ip)}#{carrier}{format_ip(ip)}"
+                        ip_set.add(entry)
                 print(f"[requests] {url} 抓取到 {len(ipv4_matches) + len(ipv6_matches)} 个 IP（不限制数量）")
 
-            # 其它网站限制最多 30 个
+            # 其它网站（限制最多 30 个）
             else:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
@@ -105,8 +114,9 @@ def fetch_ips_requests():
                     ipv6_matches = re.findall(ipv6_pattern, text)
                     for ip in ipv4_matches + ipv6_matches:
                         if is_public_ip(ip):
-                            if ip not in ip_set:
-                                ip_set.add(format_ip(ip))
+                            entry = f"{format_ip(ip)}#未知{format_ip(ip)}"
+                            if entry not in ip_set:
+                                ip_set.add(entry)
                                 count += 1
                                 if count >= 30:
                                     break
@@ -128,16 +138,21 @@ def update_ip_file(new_ips):
     else:
         existing_ips = set()
 
-    # 去掉括号，统一对比
-    existing_ips_clean = set(ip.strip('[]') for ip in existing_ips)
-    new_ips_clean = set(ip.strip('[]') for ip in new_ips)
-
-    removed_ips = existing_ips_clean - new_ips_clean
-    added_ips = new_ips_clean - existing_ips_clean
+    removed_ips = existing_ips - new_ips
+    added_ips = new_ips - existing_ips
 
     def ip_sort_key(ip):
-        ip_obj = ipaddress.ip_address(ip.split('#')[0].strip('[]'))
-        return (ip_obj.version, ip_obj)
+        ip_only = ip.split('#')[0].strip('[]')
+        carrier = ip.split('#')[1].replace(ip_only, '')
+
+        has_carrier = carrier != '未知'
+        ip_obj = ipaddress.ip_address(ip_only)
+
+        return (
+            0 if has_carrier else 1,   # 优先有运营商
+            ip_obj.version,            # IPv4 优先
+            ip_obj                     # IP 从小到大
+        )
 
     sorted_ips = sorted(new_ips, key=ip_sort_key)
 
