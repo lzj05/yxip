@@ -31,13 +31,13 @@ def fetch_ips_requests():
         'https://ip.164746.xyz',
         'https://cf.090227.xyz/',
         'https://dot.lzj.x10.bz/?doh=https%3A%2F%2Fdot.lzj.x10.bz%2Fdns-query&domain=bpb.yousef.isegaro.com&type=all',
-        'https://addressesapi.090227.xyz/ip.164746.xyz',
-        'https://addressesapi.090227.xyz/CloudFlareYes',
-        'https://ipdb.api.030101.xyz/?type=bestcf&country=true',
         'https://addressesapi.090227.xyz/ct',
         'https://addressesapi.090227.xyz/cmcc',
         'https://addressesapi.090227.xyz/cmcc-ipv6',
-        'https://ipdb.api.030101.xyz/?type=bestproxy&country=true'
+        'https://addressesapi.090227.xyz/CloudFlareYes',
+        'https://addressesapi.090227.xyz/ip.164746.xyz',
+        'https://ipdb.api.030101.xyz/?type=bestproxy&country=true',
+        'https://ipdb.api.030101.xyz/?type=bestcf&country=true'
     ]
 
     ip_set = set()
@@ -64,20 +64,28 @@ def fetch_ips_requests():
                                 count += 1
                 print(f"[requests] {url} 抓取到 {count} 个 IP（格式 IP#名称，单运营商最多 5 个）")
 
+            elif url == 'https://ip.164746.xyz':
+                ipv4_matches = re.findall(ipv4_pattern, response.text)
+                ipv6_matches = re.findall(ipv6_pattern, response.text)
+                for ip in ipv4_matches + ipv6_matches:
+                    if is_public_ip(ip):
+                        ip_set.add(format_ip(ip))
+                        count += 1
+                print(f"[requests] {url} 抓取到 {count} 个 IP")
+
             elif url == 'https://cf.090227.xyz/':
-                soup = BeautifulSoup(response.text, 'html.parser')
-                rows = soup.find_all('tr')
-                for row in rows:
-                    cols = row.find_all('td')
-                    if len(cols) >= 2:
-                        carrier = cols[0].text.strip()
-                        ip = cols[1].text.strip()
-                        if is_public_ip(ip):
-                            ip_set.add(f"{format_ip(ip)}#{carrier}")
-                            count += 1
-                            if count >= 30:
-                                break
-                print(f"[requests] {url} 抓取到 {count} 个 IP（格式 IP#运营商，限制 30 个）")
+                api_url = 'https://cf.090227.xyz/api'
+                api_response = requests.get(api_url, timeout=15)
+                api_data = api_response.json()
+
+                rows = api_data.get('rows', [])
+                for row in rows[:30]:  # 取前30条
+                    ip = row.get('ip', '').strip()
+                    carrier = row.get('line', '').strip()
+                    if ip and carrier and is_public_ip(ip):
+                        ip_set.add(f"{format_ip(ip)}#{carrier}")
+                        count += 1
+                print(f"[requests] {url} 抓取到 {count} 个 IP（格式 IP#名称，限制 30 个）")
 
             elif url == 'https://dot.lzj.x10.bz/?doh=https%3A%2F%2Fdot.lzj.x10.bz%2Fdns-query&domain=bpb.yousef.isegaro.com&type=all':
                 json_data = response.json()
@@ -132,4 +140,18 @@ def update_ip_file(new_ips):
 
     sorted_ips = ipv4_sorted + ipv6_sorted
 
-    new_ip_count = len(cleaned_ips)_
+    new_ip_count = len(cleaned_ips)
+    removed_ips = existing_ips - cleaned_ips
+    removed_ip_count = len(removed_ips)
+
+    with open(filename, 'w') as f:
+        for ip in sorted_ips:
+            f.write(f"{ip}\n")
+
+    print(f"共更新 {new_ip_count} 个 IP")
+    print(f"删除了 {removed_ip_count} 个 IP")
+
+# ======= 主程序 =======
+if __name__ == "__main__":
+    new_ips = fetch_ips_requests()
+    update_ip_file(new_ips)
