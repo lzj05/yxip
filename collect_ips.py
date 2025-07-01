@@ -5,9 +5,19 @@ import os
 import ipaddress
 import json
 
+# IP 正则
 ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
 ipv6_pattern = r'\b(?:[A-Fa-f0-9]{1,4}:){1,7}[A-Fa-f0-9]{1,4}\b'
 
+# 运营商优先级（移动 > 联通 > 电信 > 其他）
+carrier_priority = {
+    '移动': 1,
+    'CMCC': 1,
+    '联通': 2,
+    '电信': 3
+}
+
+# 判断公网 IP
 def is_public_ip(ip):
     try:
         ip_obj = ipaddress.ip_address(ip)
@@ -15,15 +25,26 @@ def is_public_ip(ip):
     except ValueError:
         return False
 
+# 格式化 IP
 def format_ip(ip, carrier=None, ipv6_no_carrier=False):
     ip_obj = ipaddress.ip_address(ip)
     if ip_obj.version == 6:
-        # IPv6加方括号，且不带运营商后缀
-        return f'[{ip}]' if ipv6_no_carrier else (f'[{ip}]#{carrier}' if carrier else f'[{ip}]')
+        return f'[{ip}]'
     else:
-        # IPv4格式：带运营商时用IP#运营商，否则只IP
         return f"{ip}#{carrier}" if carrier else ip
 
+# 获取运营商优先级
+def get_carrier_priority(entry):
+    if '#' in entry:
+        carrier = entry.split('#')[1]
+        for key in carrier_priority:
+            if key in carrier:
+                return carrier_priority[key]
+        return 4  # 未知运营商
+    else:
+        return 5  # 没有运营商
+
+# 抓取 IP
 def fetch_ips_requests():
     urls = [
         'https://api.uouin.com/cloudflare.html',
@@ -58,7 +79,6 @@ def fetch_ips_requests():
                         if is_public_ip(ip):
                             if carrier_ip_count.get(carrier, 0) < 5:
                                 ip_obj = ipaddress.ip_address(ip)
-                                # IPv6不带运营商后缀
                                 entry = format_ip(ip, carrier if ip_obj.version == 4 else None, ipv6_no_carrier=True)
                                 if entry not in ip_set:
                                     ip_set.add(entry)
@@ -89,11 +109,10 @@ def fetch_ips_requests():
                 for row in rows:
                     cols = row.find_all('td')
                     if len(cols) >= 2:
-                        ip = cols[1].get_text(strip=True)
                         carrier = cols[0].get_text(strip=True)
+                        ip = cols[1].get_text(strip=True)
                         if is_public_ip(ip):
                             ip_obj = ipaddress.ip_address(ip)
-                            # IPv6不带运营商后缀
                             entry = format_ip(ip, carrier if ip_obj.version == 4 else None, ipv6_no_carrier=True)
                             if entry not in ip_set:
                                 ip_set.add(entry)
@@ -138,6 +157,7 @@ def fetch_ips_requests():
 
     return ip_set
 
+# 写入文件
 def update_ip_file(new_ips):
     filename = 'ip.txt'
     if os.path.exists(filename):
@@ -158,8 +178,8 @@ def update_ip_file(new_ips):
     def sort_key(entry):
         ip_part = extract_ip(entry)
         ip_obj = ipaddress.ip_address(ip_part)
-        has_carrier = 0 if '#' in entry else 1
-        return (has_carrier, ip_obj.version, ip_obj)
+        priority = get_carrier_priority(entry)
+        return (priority, ip_obj.version, ip_obj)
 
     sorted_ips = sorted(new_ips, key=sort_key)
 
@@ -168,11 +188,7 @@ def update_ip_file(new_ips):
             ip_part = extract_ip(entry)
             ip_obj = ipaddress.ip_address(ip_part)
             if ip_obj.version == 6:
-                if '#' in entry:
-                    # IPv6 不应带运营商后缀，强制去除（兼容旧数据）
-                    f.write(f'[{ip_part}]\n')
-                else:
-                    f.write(f'[{ip_part}]\n')
+                f.write(f'[{ip_part}]\n')
             else:
                 f.write(f"{entry}\n")
 
