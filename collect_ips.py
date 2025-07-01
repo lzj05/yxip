@@ -4,6 +4,7 @@ import re
 import os
 import ipaddress
 import json
+from collections import defaultdict
 
 # ======= IP 正则 =======
 ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
@@ -12,17 +13,17 @@ ipv6_pattern = r'\b(?:[A-Fa-f0-9]{1,4}:){1,7}[A-Fa-f0-9]{1,4}\b'
 # ======= 判断公网 IP =======
 def is_public_ip(ip):
     try:
-        ip_obj = ipaddress.ip_address(ip)
+        ip_obj = ipaddress.ip_address(ip.strip('[]'))
         return not (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_reserved or ip_obj.is_link_local)
     except ValueError:
         return False
 
 # ======= 格式化 IP =======
 def format_ip(ip):
-    ip_obj = ipaddress.ip_address(ip)
-    if ip_obj.version == 6:
-        return f'[{ip}]'  # IPv6 加括号
-    return ip
+    if ':' in ip:  # IPv6
+        return f"[{ip.strip('[]')}]"
+    else:
+        return ip.strip('[]')
 
 # ======= requests 抓取 =======
 def fetch_ips_requests():
@@ -36,78 +37,77 @@ def fetch_ips_requests():
         'https://ipdb.api.030101.xyz/?type=bestcf&country=true'
     ]
     ip_set = set()
+
     for url in urls:
         try:
             response = requests.get(url, timeout=10)
-            count = 0
-            unlimited = ('dot.lzj.x10.bz' in url) or ('api.uouin.com' in url)
 
-            if unlimited:
-                try:
-                    data = response.json()
-                    answers = data.get("Answer", [])
-                    for ans in answers:
-                        ip = ans.get("data", "").strip()
+            if 'api.uouin.com/cloudflare.html' in url:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                rows = soup.find_all('tr')
+                count = 0
+                operator_ips = defaultdict(int)
+
+                for row in rows:
+                    cols = row.find_all('td')
+                    if len(cols) >= 3:
+                        name = cols[0].get_text(strip=True)
+                        ip = cols[1].get_text(strip=True)
+
+                        if re.match(ipv4_pattern, ip) or re.match(ipv6_pattern, ip):
+                            if is_public_ip(ip) and operator_ips[name] < 5:
+                                formatted_ip = f"{format_ip(ip)}#{name}"
+                                ip_set.add(formatted_ip)
+                                operator_ips[name] += 1
+                                count += 1
+
+                print(f"[requests] {url} 抓取到 {count} 个 IP（格式 IP#名称，单运营商最多 5 个）")
+
+            elif 'dot.lzj.x10.bz' in url:
+                json_data = response.json()
+                count = 0
+                if 'Answer' in json_data:
+                    for answer in json_data['Answer']:
+                        ip = answer.get('data')
                         if ip and is_public_ip(ip):
                             ip_set.add(format_ip(ip))
-                    print(f"[requests] {url} 抓取到 {len(answers)} 个 IP（不限制数量）")
-                except Exception:
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
-                    for element in elements:
-                        text = element.get_text()
-                        ipv4_matches = re.findall(ipv4_pattern, text)
-                        ipv6_matches = re.findall(ipv6_pattern, text)
-                        for ip in ipv4_matches + ipv6_matches:
-                            if is_public_ip(ip):
-                                ip_set.add(format_ip(ip))
-                    print(f"[requests] {url} 抓取到 {len(ip_set)} 个 IP（不限制数量）")
+                            count += 1
+                print(f"[requests] {url} 抓取到 {count} 个 IP")
 
             elif 'cf.090227.xyz' in url:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                rows = soup.find_all('tr')
-                for row in rows:
-                    cols = row.find_all('td')
-                    if len(cols) >= 2:
-                        ip = cols[1].get_text(strip=True)
-                        if re.match(ipv4_pattern, ip) and is_public_ip(ip):
-                            if ip not in ip_set:
-                                ip_set.add(format_ip(ip))
-                                count += 1
-                                if count >= 30:
-                                    break
-                print(f"[requests] {url} 抓取到 {count} 个 IP（最多30个）")
-
-            elif 'addressesapi.090227.xyz' in url or 'ipdb.api.030101.xyz' in url:
-                text = response.text
-                ipv4_matches = re.findall(ipv4_pattern, text)
-                ipv6_matches = re.findall(ipv6_pattern, text)
-                for ip in ipv4_matches + ipv6_matches:
-                    if is_public_ip(ip):
-                        ip_set.add(format_ip(ip))
-                print(f"[requests] {url} 抓取到 {len(ipv4_matches) + len(ipv6_matches)} 个 IP（不限制数量）")
+                elements = soup.find_all(['tr', 'li', 'p', 'div', 'font'])
+                count = 0
+                for element in elements:
+                    if count >= 30:
+                        break
+                    text = element.get_text()
+                    ipv4_matches = re.findall(ipv4_pattern, text)
+                    ipv6_matches = re.findall(ipv6_pattern, text)
+                    for ip in ipv4_matches + ipv6_matches:
+                        if is_public_ip(ip):
+                            ip_set.add(format_ip(ip))
+                            count += 1
+                            if count >= 30:
+                                break
+                print(f"[requests] {url} 抓取到 {count} 个 IP（限制 30 个）")
 
             else:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
+                elements = soup.find_all(['tr', 'li', 'p', 'div', 'font'])
+                count = 0
                 for element in elements:
                     text = element.get_text()
                     ipv4_matches = re.findall(ipv4_pattern, text)
                     ipv6_matches = re.findall(ipv6_pattern, text)
                     for ip in ipv4_matches + ipv6_matches:
                         if is_public_ip(ip):
-                            if ip not in ip_set:
-                                ip_set.add(format_ip(ip))
-                                count += 1
-                                if count >= 30:
-                                    break
-                    if count >= 30:
-                        break
-                print(f"[requests] {url} 抓取到 {count} 个 IP（最多30个）")
+                            ip_set.add(format_ip(ip))
+                            count += 1
+                print(f"[requests] {url} 抓取到 {count} 个 IP")
 
         except Exception as e:
             print(f"[requests] 抓取失败: {url} 错误: {e}")
-
     return ip_set
 
 # ======= 合并、去重、排序、写入 =======
@@ -119,31 +119,21 @@ def update_ip_file(new_ips):
     else:
         existing_ips = set()
 
-    # 原 IP 去括号
-    existing_ips_clean = set(ip.strip('[]') for ip in existing_ips)
-    new_ips_clean = set(ip.strip('[]') for ip in new_ips)
+    cleaned_ips = set(new_ips)
 
-    removed_ips = existing_ips_clean - new_ips_clean
-    added_ips = new_ips_clean - existing_ips_clean
+    sorted_ips = sorted(cleaned_ips, key=lambda ip: ipaddress.ip_address(ip.split('#')[0].strip('[]')))
 
-    def ip_sort_key(ip):
-        ip_obj = ipaddress.ip_address(ip)
-        return (ip_obj.version, ip_obj)
-
-    sorted_ips = sorted(new_ips_clean, key=ip_sort_key)
+    new_ip_count = len(cleaned_ips)
+    removed_ips = existing_ips - cleaned_ips
+    removed_ip_count = len(removed_ips)
 
     with open(filename, 'w') as f:
         for ip in sorted_ips:
-            ip_obj = ipaddress.ip_address(ip)
-            if ip_obj.version == 6:
-                f.write(f'[{ip}]\n')
-            else:
-                f.write(f'{ip}\n')
+            f.write(f"{ip}\n")
 
-    print(f"共更新了 {len(sorted_ips)} 个 IP")
-    print(f"新增 IP: {len(added_ips)} 个")
-    print(f"删除 IP: {len(removed_ips)} 个")
+    print(f"共更新 {new_ip_count} 个 IP")
+    print(f"删除了 {removed_ip_count} 个 IP")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     new_ips = fetch_ips_requests()
     update_ip_file(new_ips)
