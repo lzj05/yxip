@@ -15,11 +15,14 @@ def is_public_ip(ip):
     except ValueError:
         return False
 
-def format_ip(ip):
+def format_ip(ip, carrier=None, ipv6_no_carrier=False):
     ip_obj = ipaddress.ip_address(ip)
     if ip_obj.version == 6:
-        return f'[{ip}]'
-    return ip
+        # IPv6加方括号，且不带运营商后缀
+        return f'[{ip}]' if ipv6_no_carrier else (f'[{ip}]#{carrier}' if carrier else f'[{ip}]')
+    else:
+        # IPv4格式：带运营商时用IP#运营商，否则只IP
+        return f"{ip}#{carrier}" if carrier else ip
 
 def fetch_ips_requests():
     urls = [
@@ -55,8 +58,8 @@ def fetch_ips_requests():
                         if is_public_ip(ip):
                             if carrier_ip_count.get(carrier, 0) < 5:
                                 ip_obj = ipaddress.ip_address(ip)
-                                ip_formatted = f"[{ip}]" if ip_obj.version == 6 else ip
-                                entry = f"{ip_formatted}#{carrier}"
+                                # IPv6不带运营商后缀
+                                entry = format_ip(ip, carrier if ip_obj.version == 4 else None, ipv6_no_carrier=True)
                                 if entry not in ip_set:
                                     ip_set.add(entry)
                                     carrier_ip_count[carrier] = carrier_ip_count.get(carrier, 0) + 1
@@ -89,7 +92,9 @@ def fetch_ips_requests():
                         ip = cols[1].get_text(strip=True)
                         carrier = cols[0].get_text(strip=True)
                         if is_public_ip(ip):
-                            entry = f"{format_ip(ip)}#{carrier}" if carrier else format_ip(ip)
+                            ip_obj = ipaddress.ip_address(ip)
+                            # IPv6不带运营商后缀
+                            entry = format_ip(ip, carrier if ip_obj.version == 4 else None, ipv6_no_carrier=True)
                             if entry not in ip_set:
                                 ip_set.add(entry)
                                 count += 1
@@ -164,8 +169,8 @@ def update_ip_file(new_ips):
             ip_obj = ipaddress.ip_address(ip_part)
             if ip_obj.version == 6:
                 if '#' in entry:
-                    carrier = entry.split('#')[1]
-                    f.write(f'[{ip_part}]#{carrier}\n')
+                    # IPv6 不应带运营商后缀，强制去除（兼容旧数据）
+                    f.write(f'[{ip_part}]\n')
                 else:
                     f.write(f'[{ip_part}]\n')
             else:
