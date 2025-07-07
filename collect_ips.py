@@ -89,14 +89,17 @@ def fetch_ips_requests():
                     continue
 
                 data = response.json()
-                ip_list = data.get('info', [])
+                ip_list = data.get('data', [])
                 count = 0
 
-                for item in ip_list:
-                    ip = item.get('ip', '').strip()
-                    colo = item.get('colo', '').strip()
+                for entry_data in ip_list:
+                    ip = entry_data.get('ip', '').strip()
+                    colo = entry_data.get('colo', '').strip()
                     if ip and is_public_ip(ip):
                         entry = f"{ip}#{colo}" if colo else ip
+                        ip_obj = ipaddress.ip_address(ip)
+                        if ip_obj.version == 6:
+                            entry = f'[{ip}]'
                         if entry not in ip_set:
                             ip_set.add(entry)
                             count += 1
@@ -145,6 +148,8 @@ def fetch_ips_requests():
             elif 'cf.090227.xyz' in url:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 rows = soup.find_all('tr')
+                mobile_count = 0
+                telecom_count = 0
                 for row in rows:
                     cols = row.find_all('td')
                     if len(cols) >= 2:
@@ -154,11 +159,17 @@ def fetch_ips_requests():
                             ip_obj = ipaddress.ip_address(ip)
                             entry = format_ip(ip, carrier if ip_obj.version == 4 else None)
                             if entry not in ip_set:
-                                ip_set.add(entry)
-                                count += 1
+                                if '移动' in carrier and mobile_count < 5:
+                                    ip_set.add(entry)
+                                    mobile_count += 1
+                                    count += 1
+                                elif '电信' in carrier and telecom_count < 10:
+                                    ip_set.add(entry)
+                                    telecom_count += 1
+                                    count += 1
                                 if count >= 30:
                                     break
-                print(f"[requests] {url} 抓取到 {count} 个 IP（最多30条）")
+                print(f"[requests] {url} 抓取到 {count} 个 IP（最多30条，电信最多10条，移动最多5条）")
 
             else:
                 text = response.text
