@@ -17,7 +17,6 @@ carrier_priority = {
     '电信': 3
 }
 
-# 判断公网 IP
 def is_public_ip(ip):
     try:
         ip_obj = ipaddress.ip_address(ip)
@@ -25,7 +24,6 @@ def is_public_ip(ip):
     except ValueError:
         return False
 
-# 格式化 IP
 def format_ip(ip, carrier=None, ipv6_no_carrier=False):
     ip_obj = ipaddress.ip_address(ip)
     if ip_obj.version == 6:
@@ -33,18 +31,16 @@ def format_ip(ip, carrier=None, ipv6_no_carrier=False):
     else:
         return f"{ip}#{carrier}" if carrier else ip
 
-# 获取运营商优先级
 def get_carrier_priority(entry):
     if '#' in entry:
         carrier = entry.split('#')[1]
         for key in carrier_priority:
             if key in carrier:
                 return carrier_priority[key]
-        return 4  # 未知运营商
+        return 4
     else:
-        return 5  # 没有运营商
+        return 5
 
-# 抓取 IP
 def fetch_ips_requests():
     urls = [
         'https://api.uouin.com/cloudflare.html',
@@ -55,7 +51,9 @@ def fetch_ips_requests():
         'https://addressesapi.090227.xyz/cmcc',
         'https://addressesapi.090227.xyz/cmcc-ipv6',
         'https://addressesapi.090227.xyz/CloudFlareYes',
-        'https://addressesapi.090227.xyz/ip.164746.xyz'
+        'https://addressesapi.090227.xyz/ip.164746.xyz',
+        'https://stock.hostmonit.com/CloudFlareYes',
+        'https://stock.hostmonit.com/CloudFlareYesV6'
     ]
 
     ip_set = set()
@@ -119,7 +117,11 @@ def fetch_ips_requests():
                                     break
                 print(f"[requests] {url} 抓取到 {count} 个 IP（最多30条）")
 
-            elif any(x in url for x in ['addressesapi.090227.xyz', 'ipdb.api.030101.xyz']):
+            elif any(x in url for x in [
+                'addressesapi.090227.xyz',
+                'ipdb.api.030101.xyz',
+                'stock.hostmonit.com'
+            ]):
                 text = response.text
                 ipv4_matches = re.findall(ipv4_pattern, text)
                 ipv6_matches = re.findall(ipv6_pattern, text)
@@ -155,7 +157,6 @@ def fetch_ips_requests():
 
     return ip_set
 
-# 写入文件
 def update_ip_file(new_ips):
     filename = 'ip.txt'
     if os.path.exists(filename):
