@@ -55,9 +55,7 @@ def fetch_ips_requests():
         'https://addressesapi.090227.xyz/cmcc',
         'https://addressesapi.090227.xyz/cmcc-ipv6',
         'https://addressesapi.090227.xyz/CloudFlareYes',
-        'https://addressesapi.090227.xyz/ip.164746.xyz',
-        'https://ipdb.api.030101.xyz/?type=bestproxy&country=true',
-        'https://ipdb.api.030101.xyz/?type=bestcf&country=true'
+        'https://addressesapi.090227.xyz/ip.164746.xyz'
     ]
 
     ip_set = set()
