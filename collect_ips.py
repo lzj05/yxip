@@ -78,7 +78,6 @@ def fetch_ips_requests():
 
     for url in urls:
         try:
-            # Hostmonit API 请求处理
             if 'api.hostmonit.com/get_optimization_ip' in url:
                 if url.endswith('?v6'):
                     payload = {"key": "iDetkOys", "type": "v6"}
@@ -90,13 +89,14 @@ def fetch_ips_requests():
                     continue
 
                 data = response.json()
-                ip_list = data.get('data', [])
+                ip_list = data.get('info', [])
                 count = 0
 
-                for ip in ip_list:
-                    ip = ip.strip()
-                    if is_public_ip(ip):
-                        entry = format_ip(ip)
+                for item in ip_list:
+                    ip = item.get('ip', '').strip()
+                    colo = item.get('colo', '').strip()
+                    if ip and is_public_ip(ip):
+                        entry = f"{ip}#{colo}" if colo else ip
                         if entry not in ip_set:
                             ip_set.add(entry)
                             count += 1
