@@ -76,6 +76,12 @@ def fetch_ips_requests():
     ip_set = set()
     carrier_ip_count = {}
 
+    # 新增对 cf.090227.xyz 特定运营商的计数
+    cf_telecom_count = 0
+    cf_mobile_count = 0
+    CF_TELECOM_LIMIT = 10
+    CF_MOBILE_LIMIT = 5
+
     for url in urls:
         try:
             if 'api.hostmonit.com/get_optimization_ip' in url:
@@ -89,17 +95,14 @@ def fetch_ips_requests():
                     continue
 
                 data = response.json()
-                ip_list = data.get('data', [])
+                ip_list = data.get('info', [])
                 count = 0
 
-                for entry_data in ip_list:
-                    ip = entry_data.get('ip', '').strip()
-                    colo = entry_data.get('colo', '').strip()
+                for item in ip_list:
+                    ip = item.get('ip', '').strip()
+                    colo = item.get('colo', '').strip()
                     if ip and is_public_ip(ip):
                         entry = f"{ip}#{colo}" if colo else ip
-                        ip_obj = ipaddress.ip_address(ip)
-                        if ip_obj.version == 6:
-                            entry = f'[{ip}]'
                         if entry not in ip_set:
                             ip_set.add(entry)
                             count += 1
@@ -148,28 +151,45 @@ def fetch_ips_requests():
             elif 'cf.090227.xyz' in url:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 rows = soup.find_all('tr')
-                mobile_count = 0
-                telecom_count = 0
+                
+                # 遍历所有行，将符合条件的 IP 添加到临时列表
+                temp_ips_by_carrier = {'电信': [], '移动': [], '其他': []}
+                
                 for row in rows:
                     cols = row.find_all('td')
                     if len(cols) >= 2:
                         carrier = cols[0].get_text(strip=True)
                         ip = cols[1].get_text(strip=True)
+                        
                         if is_public_ip(ip):
-                            ip_obj = ipaddress.ip_address(ip)
-                            entry = format_ip(ip, carrier if ip_obj.version == 4 else None)
-                            if entry not in ip_set:
-                                if '移动' in carrier and mobile_count < 5:
-                                    ip_set.add(entry)
-                                    mobile_count += 1
-                                    count += 1
-                                elif '电信' in carrier and telecom_count < 10:
-                                    ip_set.add(entry)
-                                    telecom_count += 1
-                                    count += 1
-                                if count >= 30:
-                                    break
-                print(f"[requests] {url} 抓取到 {count} 个 IP（最多30条，电信最多10条，移动最多5条）")
+                            if '电信' in carrier and cf_telecom_count < CF_TELECOM_LIMIT:
+                                temp_ips_by_carrier['电信'].append(format_ip(ip, carrier if ipaddress.ip_address(ip).version == 4 else None))
+                            elif '移动' in carrier and cf_mobile_count < CF_MOBILE_LIMIT:
+                                temp_ips_by_carrier['移动'].append(format_ip(ip, carrier if ipaddress.ip_address(ip).version == 4 else None))
+                            elif '联通' not in carrier and '电信' not in carrier and '移动' not in carrier: # 匹配其他运营商，不限制数量
+                                temp_ips_by_carrier['其他'].append(format_ip(ip, carrier if ipaddress.ip_address(ip).version == 4 else None))
+
+                # 先添加电信 IP
+                for entry in temp_ips_by_carrier['电信']:
+                    if '电信' in entry and cf_telecom_count < CF_TELECOM_LIMIT and entry not in ip_set:
+                        ip_set.add(entry)
+                        cf_telecom_count += 1
+                        count += 1
+                
+                # 再添加移动 IP
+                for entry in temp_ips_by_carrier['移动']:
+                    if '移动' in entry and cf_mobile_count < CF_MOBILE_LIMIT and entry not in ip_set:
+                        ip_set.add(entry)
+                        cf_mobile_count += 1
+                        count += 1
+
+                # 最后添加其他 IP (不限数量)
+                for entry in temp_ips_by_carrier['其他']:
+                    if entry not in ip_set:
+                        ip_set.add(entry)
+                        count += 1
+
+                print(f"[requests] {url} 抓取到 {count} 个 IP (电信最多{CF_TELECOM_LIMIT}条, 移动最多{CF_MOBILE_LIMIT}条, 其他不限)")
 
             else:
                 text = response.text
@@ -188,7 +208,7 @@ def fetch_ips_requests():
 
     return ip_set
 
-# 写入文件
+# 写入文件 (这部分保持不变)
 def update_ip_file(new_ips):
     filename = 'ip.txt'
     if os.path.exists(filename):
