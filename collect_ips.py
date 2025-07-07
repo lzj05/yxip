@@ -17,6 +17,7 @@ carrier_priority = {
     '电信': 3
 }
 
+# 判断公网 IP
 def is_public_ip(ip):
     try:
         ip_obj = ipaddress.ip_address(ip)
@@ -24,23 +25,39 @@ def is_public_ip(ip):
     except ValueError:
         return False
 
-def format_ip(ip, carrier=None, ipv6_no_carrier=False):
+# 格式化 IP
+def format_ip(ip, carrier=None):
     ip_obj = ipaddress.ip_address(ip)
     if ip_obj.version == 6:
         return f'[{ip}]'
     else:
         return f"{ip}#{carrier}" if carrier else ip
 
+# 获取运营商优先级
 def get_carrier_priority(entry):
     if '#' in entry:
         carrier = entry.split('#')[1]
         for key in carrier_priority:
             if key in carrier:
                 return carrier_priority[key]
-        return 4
+        return 4  # 未知运营商
     else:
-        return 5
+        return 5  # 没有运营商
 
+# 通用请求函数（带重试）
+def safe_request(url, method='GET', retries=3, **kwargs):
+    for attempt in range(retries):
+        try:
+            if method == 'GET':
+                return requests.get(url, timeout=15, **kwargs)
+            elif method == 'POST':
+                return requests.post(url, timeout=15, **kwargs)
+        except Exception as e:
+            if attempt == retries - 1:
+                print(f"[requests] 请求失败: {url} 错误: {e}")
+    return None
+
+# 抓取 IP
 def fetch_ips_requests():
     urls = [
         'https://api.uouin.com/cloudflare.html',
@@ -52,8 +69,8 @@ def fetch_ips_requests():
         'https://addressesapi.090227.xyz/cmcc-ipv6',
         'https://addressesapi.090227.xyz/CloudFlareYes',
         'https://addressesapi.090227.xyz/ip.164746.xyz',
-        'https://stock.hostmonit.com/CloudFlareYes',
-        'https://stock.hostmonit.com/CloudFlareYesV6'
+        'https://api.hostmonit.com/get_optimization_ip',
+        'https://api.hostmonit.com/get_optimization_ip?v6'
     ]
 
     ip_set = set()
@@ -61,7 +78,36 @@ def fetch_ips_requests():
 
     for url in urls:
         try:
-            response = requests.get(url, timeout=15)
+            # Hostmonit API 请求处理
+            if 'api.hostmonit.com/get_optimization_ip' in url:
+                if url.endswith('?v6'):
+                    payload = {"key": "iDetkOys", "type": "v6"}
+                else:
+                    payload = {"key": "iDetkOys"}
+
+                response = safe_request(url.split('?')[0], method='POST', json=payload)
+                if not response:
+                    continue
+
+                data = response.json()
+                ip_list = data.get('data', [])
+                count = 0
+
+                for ip in ip_list:
+                    ip = ip.strip()
+                    if is_public_ip(ip):
+                        entry = format_ip(ip)
+                        if entry not in ip_set:
+                            ip_set.add(entry)
+                            count += 1
+
+                print(f"[requests] {url} 抓取到 {count} 个 IP（不限数量）")
+                continue
+
+            response = safe_request(url)
+            if not response:
+                continue
+
             count = 0
 
             if 'api.uouin.com/cloudflare.html' in url:
@@ -75,7 +121,7 @@ def fetch_ips_requests():
                         if is_public_ip(ip):
                             if carrier_ip_count.get(carrier, 0) < 5:
                                 ip_obj = ipaddress.ip_address(ip)
-                                entry = format_ip(ip, carrier if ip_obj.version == 4 else None, ipv6_no_carrier=True)
+                                entry = format_ip(ip, carrier if ip_obj.version == 4 else None)
                                 if entry not in ip_set:
                                     ip_set.add(entry)
                                     carrier_ip_count[carrier] = carrier_ip_count.get(carrier, 0) + 1
@@ -83,21 +129,18 @@ def fetch_ips_requests():
                 print(f"[requests] {url} 抓取到 {count} 个 IP（每运营商最多5个）")
 
             elif 'dot.lzj.x10.bz' in url:
-                try:
-                    data = response.json()
-                    answers = data.get('Answer', [])
-                    for ans in answers:
-                        ip = ans.get('data', '').strip()
-                        if ip and is_public_ip(ip):
-                            entry = format_ip(ip)
-                            if entry not in ip_set:
-                                ip_set.add(entry)
-                                count += 1
-                                if count >= 30:
-                                    break
-                    print(f"[requests] {url} 抓取到 {count} 个 IP（最多30条）")
-                except Exception as e:
-                    print(f"[requests] 解析JSON失败: {url} 错误: {e}")
+                data = response.json()
+                answers = data.get('Answer', [])
+                for ans in answers:
+                    ip = ans.get('data', '').strip()
+                    if ip and is_public_ip(ip):
+                        entry = format_ip(ip)
+                        if entry not in ip_set:
+                            ip_set.add(entry)
+                            count += 1
+                            if count >= 30:
+                                break
+                print(f"[requests] {url} 抓取到 {count} 个 IP（最多30条）")
 
             elif 'cf.090227.xyz' in url:
                 soup = BeautifulSoup(response.text, 'html.parser')
@@ -109,7 +152,7 @@ def fetch_ips_requests():
                         ip = cols[1].get_text(strip=True)
                         if is_public_ip(ip):
                             ip_obj = ipaddress.ip_address(ip)
-                            entry = format_ip(ip, carrier if ip_obj.version == 4 else None, ipv6_no_carrier=True)
+                            entry = format_ip(ip, carrier if ip_obj.version == 4 else None)
                             if entry not in ip_set:
                                 ip_set.add(entry)
                                 count += 1
@@ -117,11 +160,7 @@ def fetch_ips_requests():
                                     break
                 print(f"[requests] {url} 抓取到 {count} 个 IP（最多30条）")
 
-            elif any(x in url for x in [
-                'addressesapi.090227.xyz',
-                'ipdb.api.030101.xyz',
-                'stock.hostmonit.com'
-            ]):
+            else:
                 text = response.text
                 ipv4_matches = re.findall(ipv4_pattern, text)
                 ipv6_matches = re.findall(ipv6_pattern, text)
@@ -133,30 +172,12 @@ def fetch_ips_requests():
                             count += 1
                 print(f"[requests] {url} 抓取到 {count} 个 IP（不限数量）")
 
-            else:
-                soup = BeautifulSoup(response.text, 'html.parser')
-                elements = soup.find_all(['tr', 'li', 'p', 'div', 'font', 'span', 'td', 'code'])
-                for element in elements:
-                    text = element.get_text()
-                    ipv4_matches = re.findall(ipv4_pattern, text)
-                    ipv6_matches = re.findall(ipv6_pattern, text)
-                    for ip in ipv4_matches + ipv6_matches:
-                        if is_public_ip(ip):
-                            entry = format_ip(ip)
-                            if entry not in ip_set:
-                                ip_set.add(entry)
-                                count += 1
-                                if count >= 30:
-                                    break
-                    if count >= 30:
-                        break
-                print(f"[requests] {url} 抓取到 {count} 个 IP（最多30条）")
-
         except Exception as e:
             print(f"[requests] 抓取失败: {url} 错误: {e}")
 
     return ip_set
 
+# 写入文件
 def update_ip_file(new_ips):
     filename = 'ip.txt'
     if os.path.exists(filename):
