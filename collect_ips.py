@@ -9,12 +9,13 @@ import json
 ipv4_pattern = r'\b(?:\d{1,3}\.){3}\d{1,3}\b'
 ipv6_pattern = r'\b(?:[A-Fa-f0-9]{1,4}:){1,7}[A-Fa-f0-9]{1,4}\b'
 
-# 运营商优先级（移动 > 联通 > 电信 > 其他）
+# 运营商优先级（移动 > 联通 > 电信 > 多线 > 其他）
 carrier_priority = {
     '移动': 1,
-    'CMCC': 1,
+    'CMCC': 1, # 移动
     '联通': 2,
-    '电信': 3
+    '电信': 3,
+    '多线': 4, # 新增多线优先级
 }
 
 # 判断公网 IP
@@ -37,12 +38,13 @@ def format_ip(ip, carrier=None):
 def get_carrier_priority(entry):
     if '#' in entry:
         carrier = entry.split('#')[1]
-        for key in carrier_priority:
-            if key in carrier:
-                return carrier_priority[key]
-        return 4  # 未知运营商
+        # 遍历 carrier_priority，检查是否包含关键字
+        for key, priority in carrier_priority.items():
+            if key in carrier: # 检查运营商名称是否包含已定义的关键字
+                return priority
+        return 5  # 未知运营商（排在多线之后）
     else:
-        return 5  # 没有运营商
+        return 6  # 没有运营商信息（排在所有带运营商的IP之后）
 
 # 通用请求函数（带重试）
 def safe_request(url, method='GET', retries=3, **kwargs):
@@ -57,7 +59,7 @@ def safe_request(url, method='GET', retries=3, **kwargs):
                 print(f"[requests] 请求失败: {url} 错误: {e}")
     return None
 
-# 抓取 IP
+# 抓取 IP (此部分与上次修改相同，无需再次列出，除非有新的抓取逻辑变动)
 def fetch_ips_requests():
     urls = [
         'https://api.uouin.com/cloudflare.html',
@@ -76,7 +78,6 @@ def fetch_ips_requests():
     ip_set = set()
     carrier_ip_count = {}
 
-    # 新增对 cf.090227.xyz 特定运营商的计数
     cf_telecom_count = 0
     cf_mobile_count = 0
     CF_TELECOM_LIMIT = 10
@@ -100,9 +101,21 @@ def fetch_ips_requests():
 
                 for item in ip_list:
                     ip = item.get('ip', '').strip()
-                    colo = item.get('colo', '').strip()
+                    colo = item.get('colo', '').strip() # colo通常表示机房位置，这里可以作为运营商或区域信息
                     if ip and is_public_ip(ip):
-                        entry = f"{ip}#{colo}" if colo else ip
+                        # 对于 hostmonit，我们尝试从colo中提取运营商信息，如果colo有明确的移动/联通/电信/多线信息
+                        # 否则，就当做没有明确运营商，或者让get_carrier_priority判断
+                        extracted_carrier = None
+                        if 'CMCC' in colo or '移动' in colo:
+                            extracted_carrier = '移动'
+                        elif 'CU' in colo or '联通' in colo:
+                            extracted_carrier = '联通'
+                        elif 'CT' in colo or '电信' in colo:
+                            extracted_carrier = '电信'
+                        elif 'Multi' in colo or '多线' in colo: # 如果colo中包含“多线”的标识
+                            extracted_carrier = '多线'
+                        
+                        entry = format_ip(ip, extracted_carrier if extracted_carrier else colo) # 如果提取到运营商就用，否则保留colo
                         if entry not in ip_set:
                             ip_set.add(entry)
                             count += 1
@@ -125,6 +138,7 @@ def fetch_ips_requests():
                         carrier = cols[0].text.strip()
                         ip = cols[1].text.strip()
                         if is_public_ip(ip):
+                            # 这里仍然按照原先逻辑限制每运营商最多5个
                             if carrier_ip_count.get(carrier, 0) < 5:
                                 ip_obj = ipaddress.ip_address(ip)
                                 entry = format_ip(ip, carrier if ip_obj.version == 4 else None)
@@ -152,8 +166,7 @@ def fetch_ips_requests():
                 soup = BeautifulSoup(response.text, 'html.parser')
                 rows = soup.find_all('tr')
                 
-                # 遍历所有行，将符合条件的 IP 添加到临时列表
-                temp_ips_by_carrier = {'电信': [], '移动': [], '其他': []}
+                temp_ips_by_carrier = {'电信': [], '移动': [], '其他': []} # '其他'现在会包含 '多线' 和其他未识别的
                 
                 for row in rows:
                     cols = row.find_all('td')
@@ -162,12 +175,15 @@ def fetch_ips_requests():
                         ip = cols[1].get_text(strip=True)
                         
                         if is_public_ip(ip):
+                            ip_obj = ipaddress.ip_address(ip)
+                            formatted_entry = format_ip(ip, carrier if ip_obj.version == 4 else None)
+
                             if '电信' in carrier and cf_telecom_count < CF_TELECOM_LIMIT:
-                                temp_ips_by_carrier['电信'].append(format_ip(ip, carrier if ipaddress.ip_address(ip).version == 4 else None))
+                                temp_ips_by_carrier['电信'].append(formatted_entry)
                             elif '移动' in carrier and cf_mobile_count < CF_MOBILE_LIMIT:
-                                temp_ips_by_carrier['移动'].append(format_ip(ip, carrier if ipaddress.ip_address(ip).version == 4 else None))
-                            elif '联通' not in carrier and '电信' not in carrier and '移动' not in carrier: # 匹配其他运营商，不限制数量
-                                temp_ips_by_carrier['其他'].append(format_ip(ip, carrier if ipaddress.ip_address(ip).version == 4 else None))
+                                temp_ips_by_carrier['移动'].append(formatted_entry)
+                            else: # 包括联通、多线、和其他未明确的运营商
+                                temp_ips_by_carrier['其他'].append(formatted_entry)
 
                 # 先添加电信 IP
                 for entry in temp_ips_by_carrier['电信']:
@@ -183,7 +199,8 @@ def fetch_ips_requests():
                         cf_mobile_count += 1
                         count += 1
 
-                # 最后添加其他 IP (不限数量)
+                # 最后添加其他 IP (包括联通、多线、和其他未明确的运营商，不限数量)
+                # 这些将由后续的 sort_key 决定它们的优先级
                 for entry in temp_ips_by_carrier['其他']:
                     if entry not in ip_set:
                         ip_set.add(entry)
@@ -197,6 +214,8 @@ def fetch_ips_requests():
                 ipv6_matches = re.findall(ipv6_pattern, text)
                 for ip in ipv4_matches + ipv6_matches:
                     if is_public_ip(ip):
+                        # 尝试从文本中判断运营商，虽然这里比较困难，但保留 format_ip 传入 carrier 的可能性
+                        # 简单情况下，这里不加运营商信息，让get_carrier_priority返回最低优先级
                         entry = format_ip(ip)
                         if entry not in ip_set:
                             ip_set.add(entry)
@@ -208,7 +227,7 @@ def fetch_ips_requests():
 
     return ip_set
 
-# 写入文件 (这部分保持不变)
+# 写入文件 (此部分调整了 get_carrier_priority 的调用)
 def update_ip_file(new_ips):
     filename = 'ip.txt'
     if os.path.exists(filename):
@@ -229,8 +248,8 @@ def update_ip_file(new_ips):
     def sort_key(entry):
         ip_part = extract_ip(entry)
         ip_obj = ipaddress.ip_address(ip_part)
-        priority = get_carrier_priority(entry)
-        return (priority, ip_obj.version, ip_obj)
+        priority = get_carrier_priority(entry) # 使用更新后的 get_carrier_priority
+        return (priority, ip_obj.version, ip_obj) # IPv4版本号为4，IPv6版本号为6，所以IPv4自然在前
 
     sorted_ips = sorted(new_ips, key=sort_key)
 
